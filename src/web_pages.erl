@@ -18,11 +18,11 @@
          terminate/2, code_change/3]).
 
 %% External API
--export([load_pages/3, dummy/4]).
+-export([load_pages/2, dummy/1, dummy_view/1]).
 
 -include("logger.hrl").
 
--record(state, {}).
+-record(state, {compiled_views}).
 
 -define(SERVER, ?MODULE).
 
@@ -44,13 +44,14 @@ start_link() ->
 %% Description: Loads pages in directory, compiles them and registers
 %%               routes to them.
 %%--------------------------------------------------------------------
-load_pages(Prefix, WebRouter, Directory) when is_atom(Prefix) ->
-  gen_server:cast(?SERVER, {load_pages, atom_to_list(Prefix), WebRouter, Directory});
-load_pages(Prefix, WebRouter, Directory) ->
-  gen_server:cast(?SERVER, {load_pages, Prefix, WebRouter, Directory}).
+load_pages(WebRouter, Directory) ->
+  gen_server:cast(?SERVER, {load_pages, WebRouter, Directory}).
 
-dummy(_Method, _PathTokens, Req, Session) ->
-  {request, Req, session, Session, status, 200, headers, []}.
+dummy(Session) ->
+  Session:flash_merge_now([{"status", 200}, {"headers", []}]).
+
+dummy_view(Session) ->
+  gen_server:call(?SERVER, {execute_view, Session}).
 
 %%====================================================================
 %% gen_server callbacks
@@ -75,6 +76,9 @@ init([]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
+handle_call({execute_view, Session}, From, #state{compiled_views=Views} = State) ->
+  spawn(fun() -> execute_view(From, Session, Views) end),
+  {noreply, State};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
@@ -85,40 +89,28 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
-handle_cast({load_pages, Prefix, WebRouter, Directory}, State) ->
-  Files = filelib:wildcard(Directory ++ "/*.haml"),
-  ?DEBUG("[Haml] Loading up ~p under ~p for router ~p with prefix ~p~n~n", [Files, Directory, WebRouter, Prefix]),
-  lists:map(fun(FileName) ->
-                OutDir = case code:which(?MODULE) of
-                           non_existing ->
-                             filename:dirname(FileName);
-                           preloaded ->
-                             filename:dirname(FileName);
-                           cover_compiled ->
-                             filename:dirname(FileName);
-                           ModulePath ->
-                             filename:dirname(ModulePath)
-                         end,
-                StrippedFileName = filename:rootname(filename:basename(FileName)),
-                ModuleName = Prefix ++ "_" ++ StrippedFileName,
-                case haml:compile(FileName, [{module, ModuleName},
-                                            {outdir, OutDir}, report_errors,
-                                            report_warnings, nowarn_unused_vars]) of
-                  ok ->
-                    web_router:add(WebRouter, request, [StrippedFileName],
-                                   web_pages, dummy, 1),
-                    web_router:add(WebRouter, request_view, [StrippedFileName],
-                                   list_to_atom(ModuleName), render, 1),
-                    ok;
-                  {error, Reason} ->
-                    ?ERROR_MSG("Haml Compile failed for ~s with: ~p",
-                               [FileName, Reason])
-                end
-            end, Files),
-    {noreply, State};
+handle_cast({load_pages, WebRouter, Directory}, State) ->
+  Files = filelib:wildcard(Directory ++ "/*.herml"),
+  ?DEBUG("[Herml] Loading up ~p under ~p for router ~p~n~n", [Files, Directory, WebRouter]),
+  Views = lists:map(fun(FileName) ->
+                        StrippedFileName = filename:rootname(filename:basename(FileName)),
+                        case herml_parser:file(FileName) of
+                          {error, Reason} ->
+                            ?ERROR_MSG("Herml Compile failed for ~s with: ~p", [FileName, Reason]),
+                            {};
+                          CompiledTemplate ->
+                            web_router:add(WebRouter, request, [StrippedFileName],
+                                           web_pages, dummy, 1),
+                            web_router:add(WebRouter, request_view, [StrippedFileName],
+                                           web_pages, dummy_view, 1),
+                            {[StrippedFileName], CompiledTemplate}
+                        end
+                    end, Files),
+  State1 = State#state{compiled_views=Views},
+  {noreply, State1};
 
 handle_cast(_Msg, State) ->
-  ?ERROR_MSG("[Haml] Did not recognize: ~p", [_Msg]),
+  ?ERROR_MSG("[Web Pages] Did not recognize: ~p", [_Msg]),
   {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -150,3 +142,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+
+execute_view(From, Session, Views) ->
+  case lists:keysearch(Session:flash_lookup("view_tokens"), 1, Views) of
+    false ->
+      gen_server:reply(From, <<"">>);
+    {value, {_Key, Value}} ->
+      gen_server:reply(From, herml_htmlizer:render(Value, [{"Session", Session}]))
+  end.
