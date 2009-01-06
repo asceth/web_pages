@@ -48,7 +48,7 @@ load_pages(WebRouter, Directory) ->
   gen_server:cast(?SERVER, {load_pages, WebRouter, Directory}).
 
 dummy(Session) ->
-  Session:flash_merge_now([{"status", 200}, {"headers", []}]).
+  web_session:flash_merge_now(Session, [{"status", 200}, {"headers", []}]).
 
 dummy_view(Session) ->
   gen_server:call(?SERVER, {execute_view, Session}).
@@ -144,7 +144,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 execute_view(From, Session, Views) ->
-  case lists:keysearch(Session:flash_lookup("view_tokens"), 1, Views) of
+  case lists:keysearch(web_session:flash_lookup(Session, "view_tokens"), 1, Views) of
     false ->
       gen_server:reply(From, <<"">>);
     {value, {_Key, Value}} ->
