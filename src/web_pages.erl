@@ -22,7 +22,7 @@
 
 -include("logger.hrl").
 
--record(state, {compiled_views}).
+-record(state, {compiled_views=[]}).
 
 -define(SERVER, ?MODULE).
 
