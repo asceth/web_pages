@@ -106,7 +106,7 @@ handle_cast({load_pages, WebRouter, Directory}, State) ->
                             {[StrippedFileName], CompiledTemplate}
                         end
                     end, Files),
-  State1 = State#state{compiled_views=Views},
+  State1 = State#state{compiled_views=lists:ukeysort(1, Views ++ State#state.compiled_views)},
   {noreply, State1};
 
 handle_cast(_Msg, State) ->
