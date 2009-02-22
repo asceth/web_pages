@@ -89,9 +89,9 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
-handle_cast({load_pages, WebRouter, Directory}, State) ->
+handle_cast({load_pages, Exchange, Directory}, State) ->
   Files = filelib:wildcard(Directory ++ "/*.herml"),
-  ?DEBUG("[Herml] Loading up ~p under ~p for router ~p~n~n", [Files, Directory, WebRouter]),
+  ?DEBUG("[Herml] Loading up ~p under ~p for exchange ~p~n~n", [Files, Directory, Exchange]),
   Views = lists:map(fun(FileName) ->
                         StrippedFileName = filename:rootname(filename:basename(FileName)),
                         case herml_parser:file(FileName) of
@@ -99,10 +99,8 @@ handle_cast({load_pages, WebRouter, Directory}, State) ->
                             ?ERROR_MSG("Herml Compile failed for ~s with: ~p", [FileName, Reason]),
                             {};
                           CompiledTemplate ->
-                            web_router:add(WebRouter, request, [StrippedFileName],
-                                           web_pages, dummy, 1),
-                            web_router:add(WebRouter, request_view, [StrippedFileName],
-                                           web_pages, dummy_view, 1),
+                            web_router_exchange:add_binding(Exchange, fun web_pages:dummy/1, web_router:key([get, request, StrippedFileName])),
+                            web_router_exchange:add_binding(Exchange, fun web_pages:dummy_view/1, web_router:key([get, request_view, StrippedFileName])),
                             {[StrippedFileName], CompiledTemplate}
                         end
                     end, Files),

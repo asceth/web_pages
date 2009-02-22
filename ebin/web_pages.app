@@ -7,7 +7,7 @@
               web_pages_sup,
               web_pages]},
    {registered, [web_pages_sup]},
-   {applications, [kernel, stdlib]},
+   {applications, [kernel, stdlib, web_router]},
    {mod, {web_pages_app, []}},
    {start_phases, []}]}.
 
