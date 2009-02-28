@@ -144,7 +144,7 @@ code_change(_OldVsn, State, _Extra) ->
 execute_view(From, Session, Views) ->
   case lists:keysearch(web_session:flash_lookup(Session, "view_tokens"), 1, Views) of
     false ->
-      gen_server:reply(From, <<"">>);
+      gen_server:reply(From, "");
     {value, {_Key, Value}} ->
-      gen_server:reply(From, herml_htmlizer:render(Value, [{"Session", Session}]))
+      gen_server:reply(From, herml_htmlizer:render(Value, [{"Session", Session}], 0))
   end.
